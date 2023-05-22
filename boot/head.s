@@ -21,7 +21,14 @@ startup_32:
 	mov %ax,%es
 	mov %ax,%fs
 	mov %ax,%gs
+; lss : 低16位传入esp，高16位传入ss（栈段寄存器） ss:esp代表栈顶指针
+; stack_start = { & user_stack [PAGE_SIZE>>2] , 0x10 };
+; 通过结构体的赋值来实现高低位，低位为user_stack数组最后一个元素的地址，高位为0x10
+; 保护模式下寻址参见此前jmp 8，0x10实际上指向的是第二个段描述符，（100000），段基址是 0
 	lss stack_start,%esp
+; 重新设置idt和gdt
+; 中断描述符表 idt 没设置过, 原来设置的 gdt 是在 setup 程序中，之后这个地方要被缓冲区覆盖掉，所以这里重新设置在 head 程序中
+; 
 	call setup_idt
 	call setup_gdt
 	movl $0x10,%eax		# reload all the segment registers
@@ -78,6 +85,8 @@ check_x87:
  *  written by the page tables.
  */
 setup_idt:
+; lea是“load effective address”的缩写，简单的说，lea指令可以用来将一个内存地址直接赋给目的操作数
+; 由于这个汇编文件好像和x86的语法不同，因此不做全部介绍
 	lea ignore_int,%edx
 	movl $0x00080000,%eax
 	movw %dx,%ax		/* selector = 0x0008 = cs */
@@ -135,10 +144,11 @@ tmp_floppy_area:
 	.fill 1024,1,0
 
 after_page_tables:
-	pushl $0		# These are the parameters to main :-)
+	pushl $0		# These are the parameters to main :-) 开始分页
 	pushl $0
 	pushl $0
 	pushl $L6		# return address for main, if it decides to.
+	; 压入main函数地址开始执行
 	pushl $main
 	jmp setup_paging
 L6:
@@ -217,6 +227,7 @@ setup_paging:
 	movl %cr0,%eax
 	orl $0x80000000,%eax
 	movl %eax,%cr0		/* set paging (PG) bit */
+	; ret会返回栈顶执行
 	ret			/* this also flushes prefetch-queue */
 
 .align 2
